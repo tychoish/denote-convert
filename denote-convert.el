@@ -3,7 +3,7 @@
 ;; Author: sam kleinman <sam@tychoish.com>
 ;; Maintainer: sam kleinman <sam@tychoish.com>
 ;; Version: 0.1.0
-;; Package-Requires: ((emacs "29.1") (denote "3.0.0"))
+;; Package-Requires: ((emacs "29.1") (denote "3.0.0") (denote-org "0.3.0"))
 ;; Keywords: docs, denote, convenience, tools
 ;; URL: https://github.com/tychoish/denote-convert
 
@@ -23,6 +23,7 @@
 (require 'subr-x)
 (require 'denote)
 (require 'org)
+(require 'denote-org)
 
 (defgroup denote-convert nil
   "File format translation and Org datetree importer for Denote."
@@ -234,6 +235,49 @@ match NEW-FILE-TYPE's extension.  The note body is left untouched."
         (rename-file file new-name))
       (run-hook-with-args 'denote-convert-after-conversion-functions file new-name old-file-type new-file-type)
       (message "Converted %s -> %s" (file-name-nondirectory file) (file-name-nondirectory new-name)))))
+
+;;; Org subtree extraction
+
+(defun denote-convert--parse-heading-date (heading)
+  "Return an Emacs time value for the first org timestamp in HEADING, or nil."
+  (when (string-match org-ts-regexp-both heading)
+    (condition-case nil
+        (org-time-string-to-time (match-string 0 heading))
+      (error nil))))
+
+;;;###autoload
+(defun denote-convert-subtree ()
+  "Extract the current Org subtree to a new denote note.
+Replaces the original heading with a denote link to the newly created note
+and tags it \"denoted\".  Preserves a timestamp found in the heading as the
+CREATED property when no DATE, CREATED, or CLOSED property is present."
+  (interactive)
+  (when (derived-mode-p 'org-agenda-mode)
+    (org-agenda-goto))
+  (unless (derived-mode-p 'org-mode)
+    (user-error "Must be in an org-mode or org-agenda-mode buffer"))
+  (let* ((source-buf (current-buffer))
+         (insert-marker (copy-marker (org-entry-beginning-position)))
+         (level (org-current-level))
+         (heading (org-get-heading t t t t))
+         (heading-date (denote-convert--parse-heading-date heading)))
+    (when (and heading-date
+               (not (or (org-entry-get nil "DATE")
+                        (org-entry-get nil "CREATED")
+                        (org-entry-get nil "CLOSED"))))
+      (org-set-property "CREATED"
+                        (format-time-string "[%Y-%m-%d %a %H:%M]" heading-date)))
+    (when-let* ((path (denote-org-extract-org-subtree)))
+      (with-current-buffer source-buf
+        (save-excursion
+          (goto-char insert-marker)
+          (insert (concat (make-string level ?*)
+                          " "
+                          (denote-format-link path heading 'org nil)
+                          "\n"))
+          (goto-char insert-marker)
+          (org-toggle-tag "denoted" 'on)))
+      (set-marker insert-marker nil))))
 
 (provide 'denote-convert)
 ;;; denote-convert.el ends here

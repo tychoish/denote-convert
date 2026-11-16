@@ -74,5 +74,31 @@
               (should (re-search-forward "^signature:.*1a" nil t)))))
       (delete-directory dir t))))
 
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Subtree extraction tests
+
+(ert-deftest denote-convert-test/parse-heading-date ()
+  "Parses the first org timestamp in a heading."
+  (should (denote-convert--parse-heading-date "Task <2024-03-15 Fri>"))
+  (should (denote-convert--parse-heading-date "[2025-06-30 Mon]"))
+  (should-not (denote-convert--parse-heading-date ""))
+  (should-not (denote-convert--parse-heading-date "No date")))
+
+(ert-deftest denote-convert-test/subtree-replaces-heading-with-link ()
+  "Extraction replaces the heading with a link, tags it and sets CREATED."
+  (with-temp-buffer
+    (org-mode)
+    (insert "* Task <2024-03-15 Fri>\nbody\n")
+    (goto-char (point-min))
+    (cl-letf (((symbol-function 'denote-org-extract-org-subtree)
+               (lambda () "/tmp/20240315T000000--task.org"))
+              ((symbol-function 'denote-format-link)
+               (lambda (path title &rest _) (format "[[%s][%s]]" path title))))
+      (denote-convert-subtree))
+    (goto-char (point-min))
+    (should (looking-at "\\* \\[\\[/tmp/20240315T000000--task.org\\]\\[Task <2024-03-15 Fri>\\]\\].*:denoted:"))
+    (outline-next-heading)
+    (should (org-entry-get nil "CREATED"))))
+
 (provide 'test-denote-convert)
 ;;; test-denote-convert.el ends here
