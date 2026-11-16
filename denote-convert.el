@@ -25,6 +25,8 @@
 (require 'org)
 (require 'denote-org)
 
+(declare-function org-agenda-goto "org-agenda")
+
 (defgroup denote-convert nil
   "File format translation and Org datetree importer for Denote."
   :group 'denote
